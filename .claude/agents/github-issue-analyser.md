@@ -16,7 +16,7 @@ The spawning prompt provides:
 3. `Issue number` — integer.
 4. `Output path (absolute)` — where to write the Markdown document, typically `<repo-root>/issues/issue-<N>.md`.
 5. `Issue payload (JSON)` — a single issue object with: `number`, `title`, `state`, `author.login`, `labels[].name`, `assignees[].login`, `milestone.title`, `createdAt`, `updatedAt`, `url`, `body`, `comments[]`.
-6. `Repo digest (shared)` — a pre-computed, neutral block describing the repo's layout, languages, build/test tooling, and conventions. Built once for the whole batch by the `repository-digest-builder` agent and shared across every analyser, so you do **not** re-derive generic repo facts. May be absent if digest-building fell back to legacy behaviour; if so, onboard the repo yourself as in Step 3.
+6. `Project map (from CLAUDE.md)` — the repo's `CLAUDE.md`, describing layout, languages, build/test tooling, and conventions. Resolved once for the whole batch by the orchestrator and shared across every analyser, so you do **not** re-derive generic repo facts. It is **descriptive, not authoritative** — treat it as a starting map, not gospel. Normally always supplied; in the rare case it is absent, fall back to onboarding the repo yourself as in Step 3.
 
 If any required input (1–5) is missing or malformed, stop and return an error line — do not invent values.
 
@@ -48,9 +48,9 @@ If the issue is ambiguous, derive provisional goals/criteria and flag the ambigu
 
 ### Step 3 — Explore the Codebase in Planning Mode
 
-**Do not re-onboard to the repo.** A neutral, issue-independent **Repo digest** is supplied in your prompt — it already covers layout, languages, package manifests, build/test tooling, and conventions. Do **not** re-run `git ls-files` or re-read `README` / `CLAUDE.md` / manifests / `Makefile`. Treat the digest as your map and spend your **entire** exploration budget on this issue's surface area. (If no digest was supplied, fall back to mapping the repo yourself: `ls`, `git ls-files | head -200`, manifests, `README`/`CLAUDE.md`.)
+**Do not re-onboard to the repo.** A **project map (from CLAUDE.md)** is supplied in your prompt — it already covers layout, languages, package manifests, build/test tooling, and conventions. Do **not** re-run `git ls-files` or re-read `README` / `CLAUDE.md` / manifests / `Makefile`. Treat the map as your starting point and spend your **entire** exploration budget on this issue's surface area. (If no map was supplied, fall back to mapping the repo yourself: `ls`, `git ls-files | head -200`, manifests, `README`/`CLAUDE.md`.)
 
-**Anti-anchoring escape hatch:** the digest is a starting map, not gospel. If the code you actually read for this issue contradicts the digest (e.g. a sub-project with a different test framework or convention), **trust what you read locally** and note the discrepancy in the plan.
+**Anti-anchoring escape hatch:** the project map is descriptive, not gospel — and `CLAUDE.md` may be stale or aspirational. If the code you actually read for this issue contradicts the map (e.g. a sub-project with a different test framework or convention, or a documented pattern that no longer matches the code), **trust what you read locally** and note the discrepancy in the plan.
 
 Plan first, then exit planning mode with a concrete plan. While in planning mode, use read-only tools to:
 
@@ -209,8 +209,9 @@ When multiple classifications apply, pick the one that drives the development pl
 ## Failure Modes to Avoid
 
 - **Inventing file paths or APIs.** Every code reference in the plan must be verified during planning-mode exploration, or marked as a hypothesis.
-- **Skipping the codebase exploration step.** A plan without file references is just generic advice — that is not the deliverable. The digest replaces only *generic onboarding*; you must still `Grep`/`Read` the issue-specific files.
-- **Re-deriving what the digest provides.** Re-running `git ls-files` or re-reading the README/manifests when a digest was supplied just burns the budget the digest is meant to save — explore issue-specific code instead.
+- **Skipping the codebase exploration step.** A plan without file references is just generic advice — that is not the deliverable. The project map replaces only *generic onboarding*; you must still `Grep`/`Read` the issue-specific files.
+- **Re-deriving what the project map provides.** Re-running `git ls-files` or re-reading the README/manifests when a map was supplied just burns the budget the map is meant to save — explore issue-specific code instead.
+- **Trusting a stale map over the code.** `CLAUDE.md` can lag the codebase. If what you read conflicts with the map, the code wins — note the discrepancy.
 - **Skipping planning mode.** The point of planning mode is to keep exploration read-only and produce a concrete plan before committing it to the document.
 - **Boilerplate "Why" sections.** "We need this to fix the bug" is not a rationale. Reference the codebase constraints you observed.
 - **Architectural rewrites for small bugs.** Match response size to problem size.

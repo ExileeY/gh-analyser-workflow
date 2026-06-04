@@ -45,6 +45,14 @@ Ensure the output directory exists at the project root:
 mkdir -p ./issues
 ```
 
+Verify the **project map** prerequisite is present. The pipeline pastes the repo's `CLAUDE.md` into every analyser as a shared project map (resolved in Phase 3.5), so its existence is a hard prerequisite checked here — up front, alongside the `gh` and `./issues` checks — not deep into the run:
+
+```bash
+test -f CLAUDE.md && echo "CLAUDE.md: present" || echo "CLAUDE.md: MISSING"
+```
+
+If `CLAUDE.md` is **missing**, do not proceed to fetch issues. Run the onboarding process to generate it by invoking the **`/init`** skill (via the `Skill` tool with `skill: "init"`), which writes a `CLAUDE.md` documenting the codebase. Once `/init` completes and `CLAUDE.md` exists, continue with the workflow. If the user declines onboarding, stop — the pipeline cannot run without a project map.
+
 ### Phase 2 — Fetch Open Issues
 
 Fetch the open issues with the fields the analyser needs:
@@ -72,20 +80,19 @@ echo "$(pwd)/issues"
 
 Use this absolute path in every spawn prompt below.
 
-### Phase 3.5 — Build the Repo Digest (once)
+### Phase 3.5 — Resolve the Project Map
 
-Each `github-issue-analyser` would otherwise re-onboard to the repo from scratch (mapping layout, reading the README/manifests, learning conventions) — paying that generic cost once per issue. Instead, compute it **once** here and share it with every analyser.
+Each `github-issue-analyser` would otherwise re-onboard to the repo from scratch (mapping layout, reading the README/manifests, learning conventions) — paying that generic cost once per issue. Instead, resolve a single shared **project map** here, sourced from the repo's `CLAUDE.md`, and paste it into every analyser.
 
-Spawn a single `repository-digest-builder` agent via the `Agent` tool:
+Read `CLAUDE.md` from the project root:
 
-- `description`: `"Build repo digest"`
-- `subagent_type`: `"repository-digest-builder"`
-- `prompt`: `Repository root (absolute): <ABSOLUTE_PROJECT_ROOT>`
-- `run_in_background`: omit (run foreground; the digest is needed before any analyser spawns)
+```bash
+cat CLAUDE.md
+```
 
-The `repository-digest-builder` agent runs in a **clean context with no knowledge of any issue** — that is deliberate. The digest must describe the repo *as it is*, not as the backlog makes it look. If the orchestrator built the digest itself, its context (already full of issue bodies) would skew it toward the modules the issues mention. The zero-context agent guarantees a neutral, issue-independent map.
+Capture its text verbatim as the **project map** and reuse it for every spawn in Phase 4. Phase 1 already guaranteed `CLAUDE.md` exists (running `/init` to onboard if it was missing), so here you only read it — no existence check or stop condition is needed at this stage.
 
-Capture the agent's returned **Repo digest** block verbatim and reuse it for every spawn in Phase 4. If the `repository-digest-builder` agent fails, fall back to the legacy behaviour (let each analyser onboard itself: omit the digest section from the spawn prompt) and note the fallback to the user.
+> **Note:** the project map is *descriptive*, not authoritative. The analyser is instructed to use it as a starting map and to trust the code over the map on any conflict.
 
 ### Phase 4 — Spawn `github-issue-analyser` Sub-Agents (one per issue)
 
@@ -108,14 +115,14 @@ Repository root (absolute): <ABSOLUTE_PROJECT_ROOT>
 Issue number: <N>
 Output path (absolute): <ABSOLUTE_PROJECT_ROOT>/issues/issue-<N>.md
 
-Repo digest (shared, neutral — do NOT re-derive generic repo facts):
-<DIGEST_BLOCK_FROM_PHASE_3.5>
+Project map (from CLAUDE.md — shared, descriptive, NOT authoritative; do NOT re-derive generic repo facts, but trust the code over this map on any conflict):
+<CLAUDE_MD_TEXT_FROM_PHASE_3.5>
 
 Issue payload (JSON):
 <COMPACT_JSON_FOR_THIS_ONE_ISSUE>
 ```
 
-Embed the JSON for **exactly one** issue per spawn — never the whole list. Compact (no pretty-print) to keep the prompt tight. Paste the **same** `<DIGEST_BLOCK_FROM_PHASE_3.5>` into every spawn (omit the digest section only if Phase 3.5 fell back to legacy behaviour).
+Embed the JSON for **exactly one** issue per spawn — never the whole list. Compact (no pretty-print) to keep the prompt tight. Paste the **same** `<CLAUDE_MD_TEXT_FROM_PHASE_3.5>` into every spawn.
 
 Track each dispatch with `TaskUpdate` (set the per-issue task to `in_progress` before the wave, `completed` after the wave returns).
 
@@ -144,11 +151,11 @@ Do not repeat the analyses themselves — they live on disk.
 - Do NOT analyse issues directly in this skill's context. All analysis happens inside spawned `github-issue-analyser` sub-agents.
 - Do NOT share state between sub-agents. Each one only sees its own issue payload — that is the point of the clean context window.
 - Do NOT pass the full issue list to any single sub-agent. One issue per spawn.
-- Do NOT modify repository files other than writing to `./issues/`.
+- Do NOT modify repository files other than writing to `./issues/`. `CLAUDE.md` is read-only here — the pipeline consumes it, it does not write it.
 - Do NOT delete or overwrite existing `issue-<N>.md` files without confirming with the user first. If a file already exists, ask whether to overwrite, skip, or write to `issue-<N>-v2.md`.
 
 ## Resources
 
-- The `repository-digest-builder` agent definition at `.claude/agents/repository-digest-builder.md`. A clean-context, read-only agent that builds the shared repo digest once (Phase 3.5) and returns it; it never sees any issue.
-- The `github-issue-analyser` agent definition (system prompt + tool allowlist) at `.claude/agents/github-issue-analyser.md`. The orchestrator only needs to invoke it correctly; the agent owns the analysis workflow, the codebase-planning step, and the Markdown template. It now consumes the shared repo digest instead of re-onboarding.
+- The `github-issue-analyser` agent definition (system prompt + tool allowlist) at `.claude/agents/github-issue-analyser.md`. The orchestrator only needs to invoke it correctly; the agent owns the analysis workflow, the codebase-planning step, and the Markdown template. It consumes the shared project map (from `CLAUDE.md`, resolved in Phase 3.5) instead of re-onboarding.
+- The repo's `CLAUDE.md` is the source of the shared project map (Phase 3.5). The pipeline reads it as-is and assumes it exists and is current.
 - `references/gh-issue-fields.md` — reference for the JSON fields returned by `gh issue list` and how the analyser consumes them.

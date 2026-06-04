@@ -6,6 +6,7 @@ A Claude Code pipeline for batch-analysing a repository's **open GitHub issues**
 
 - **[GitHub CLI](https://cli.github.com/) (`gh`)** — installed and authenticated (`gh auth login`). The current working directory must be a GitHub-connected repository (`gh repo view` must resolve it).
 - **[Claude Code](https://claude.com/claude-code)** with sub-agent support — the pipeline spawns sub-agents via the `Agent` tool, each running in a clean context window.
+- **A current `CLAUDE.md`** at the repo root — the pipeline reads it as the shared project map for every analyser. Its presence is checked during preflight; if it is missing, the pipeline runs `/init` to onboard and generate one before continuing.
 
 ## Usage
 
@@ -20,16 +21,15 @@ By default only **open** issues are analysed. If you want closed or all issues �
 
 ## How It Works
 
-The pipeline is a three-component orchestration that lives entirely under `.claude/`:
+The pipeline is a two-component orchestration that lives entirely under `.claude/`:
 
 1. **Orchestrator skill** — [`.claude/skills/migrate-github-issues-to-handoffs/SKILL.md`](.claude/skills/migrate-github-issues-to-handoffs/SKILL.md)
-   Verifies the environment, fetches open issues with `gh`, then dispatches the sub-agents below and verifies the output. It never analyses issues itself.
+   Verifies the environment, fetches open issues with `gh`, reads the repo's `CLAUDE.md` as the shared **project map**, then dispatches the analysers below and verifies the output. It never analyses issues itself.
 
-2. **Repo-digest agent** — [`.claude/agents/repository-digest-builder.md`](.claude/agents/repository-digest-builder.md)
-   Runs **once** per batch in a clean, issue-blind context to build a neutral map of the repository (layout, languages, build/test tooling, conventions). This digest is shared with every analyser so each one skips generic onboarding.
+2. **Issue-analyser agent** — [`.claude/agents/github-issue-analyser.md`](.claude/agents/github-issue-analyser.md)
+   Spawned **once per issue**, each in its own clean context window (up to 5 in parallel). It receives the shared project map (so it skips generic onboarding), reads a single issue payload, explores the codebase in read-only planning mode to ground the plan in real files, and writes exactly one Markdown document. It treats the map as descriptive — if the code conflicts with it, the code wins.
 
-3. **Issue-analyser agent** — [`.claude/agents/github-issue-analyser.md`](.claude/agents/github-issue-analyser.md)
-   Spawned **once per issue**, each in its own clean context window (up to 5 in parallel). It reads a single issue payload, explores the codebase in read-only planning mode to ground the plan in real files, and writes exactly one Markdown document.
+The shared project map is the repo's **`CLAUDE.md`**, read as-is. The pipeline assumes it exists and is current, and never modifies it. This replaces the earlier auto-generated "repo digest" step.
 
 ## Output
 
@@ -47,8 +47,7 @@ where `<N>` is the issue number. Every document includes YAML frontmatter (numbe
 .
 ├── .claude/
 │   ├── agents/
-│   │   ├── github-issue-analyser.md       # per-issue analysis agent
-│   │   └── repository-digest-builder.md   # shared repo-digest agent (runs once)
+│   │   └── github-issue-analyser.md       # per-issue analysis agent
 │   └── skills/
 │       └── migrate-github-issues-to-handoffs/
 │           ├── SKILL.md                    # orchestrator entry point
