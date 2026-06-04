@@ -37,7 +37,7 @@ If the user supplies arguments like:
 - `assignee=@me` → `--assignee @me`
 - `limit=50` → `--limit 50`
 
-forward them on the `gh issue list` call. Default is `--state open --limit 1000`.
+forward them on the `gh issue list` call. Default is `--state open --limit 100` (matches SKILL.md Phase 2).
 
 ## Empty / large-list handling
 
