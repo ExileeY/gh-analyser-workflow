@@ -72,6 +72,21 @@ echo "$(pwd)/issues"
 
 Use this absolute path in every spawn prompt below.
 
+### Phase 3.5 — Build the Repo Digest (once)
+
+Each `issue-analyser` would otherwise re-onboard to the repo from scratch (mapping layout, reading the README/manifests, learning conventions) — paying that generic cost once per issue. Instead, compute it **once** here and share it with every analyser.
+
+Spawn a single `repo-digest` agent via the `Agent` tool:
+
+- `description`: `"Build repo digest"`
+- `subagent_type`: `"repo-digest"`
+- `prompt`: `Repository root (absolute): <ABSOLUTE_PROJECT_ROOT>`
+- `run_in_background`: omit (run foreground; the digest is needed before any analyser spawns)
+
+The `repo-digest` agent runs in a **clean context with no knowledge of any issue** — that is deliberate. The digest must describe the repo *as it is*, not as the backlog makes it look. If the orchestrator built the digest itself, its context (already full of issue bodies) would skew it toward the modules the issues mention. The zero-context agent guarantees a neutral, issue-independent map.
+
+Capture the agent's returned **Repo digest** block verbatim and reuse it for every spawn in Phase 4. If the `repo-digest` agent fails, fall back to the legacy behaviour (let each analyser onboard itself: omit the digest section from the spawn prompt) and note the fallback to the user.
+
 ### Phase 4 — Spawn `issue-analyser` Sub-Agents (one per issue)
 
 For each issue, spawn a separate `issue-analyser` sub-agent via the `Agent` tool. Each spawn starts with a clean context window — no parent conversation, no other issues, no prior analyses.
@@ -93,11 +108,14 @@ Repository root (absolute): <ABSOLUTE_PROJECT_ROOT>
 Issue number: <N>
 Output path (absolute): <ABSOLUTE_PROJECT_ROOT>/issues/issue-<N>.md
 
+Repo digest (shared, neutral — do NOT re-derive generic repo facts):
+<DIGEST_BLOCK_FROM_PHASE_3.5>
+
 Issue payload (JSON):
 <COMPACT_JSON_FOR_THIS_ONE_ISSUE>
 ```
 
-Embed the JSON for **exactly one** issue per spawn — never the whole list. Compact (no pretty-print) to keep the prompt tight.
+Embed the JSON for **exactly one** issue per spawn — never the whole list. Compact (no pretty-print) to keep the prompt tight. Paste the **same** `<DIGEST_BLOCK_FROM_PHASE_3.5>` into every spawn (omit the digest section only if Phase 3.5 fell back to legacy behaviour).
 
 Track each dispatch with `TaskUpdate` (set the per-issue task to `in_progress` before the wave, `completed` after the wave returns).
 
@@ -131,5 +149,6 @@ Do not repeat the analyses themselves — they live on disk.
 
 ## Resources
 
-- The `issue-analyser` agent definition (system prompt + tool allowlist) at `.claude/agents/issue-analyser.md`. The orchestrator only needs to invoke it correctly; the agent owns the analysis workflow, the codebase-planning step, and the Markdown template.
+- The `repo-digest` agent definition at `.claude/agents/repo-digest.md`. A clean-context, read-only agent that builds the shared repo digest once (Phase 3.5) and returns it; it never sees any issue.
+- The `issue-analyser` agent definition (system prompt + tool allowlist) at `.claude/agents/issue-analyser.md`. The orchestrator only needs to invoke it correctly; the agent owns the analysis workflow, the codebase-planning step, and the Markdown template. It now consumes the shared repo digest instead of re-onboarding.
 - `references/gh-issue-fields.md` — reference for the JSON fields returned by `gh issue list` and how the analyser consumes them.

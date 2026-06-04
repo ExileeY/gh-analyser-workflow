@@ -26,7 +26,7 @@ Each item in the resulting JSON array has this shape:
 
 ## Per-issue payload passed to each sub-agent
 
-The orchestrator extracts a single item from the list above and embeds it as compact JSON in the sub-agent's prompt. The sub-agent (`issue-analyser`) parses this JSON, then reads the codebase locally, plans, and writes the analysis Markdown. The sub-agent must NOT call `gh` to fetch additional issues — its scope is one issue only.
+The orchestrator extracts a single item from the list above and embeds it as compact JSON in the sub-agent's prompt. Alongside the JSON, each spawn also carries a **shared repo-digest block** — a neutral, issue-independent map of the repo built once per batch by the `repo-digest` agent (see SKILL.md Phase 3.5) — so the analyser does not re-onboard to the repo for every issue. The sub-agent (`issue-analyser`) parses the JSON, uses the digest as its starting map, reads the issue-specific codebase locally, plans, and writes the analysis Markdown. The sub-agent must NOT call `gh` to fetch additional issues — its scope is one issue only.
 
 ## Filter forwarding
 
