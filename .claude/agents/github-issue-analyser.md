@@ -1,6 +1,6 @@
 ---
-name: issue-analyser
-description: Analyses exactly one GitHub issue and produces a detailed, codebase-grounded development plan. Spawned by the analyse-github-issues orchestrator, one invocation per issue, in parallel. Each spawn starts with a clean context window — no knowledge of prior issues, prior analyses, or the parent conversation. The agent: (1) reads the supplied issue payload and defines goals + acceptance criteria, (2) explores the local codebase in planning mode to ground the plan in real files, (3) produces a step-by-step dev plan with rationale for each step, (4) writes the analysis to `<project-root>/issues/issue-<N>.md`.
+name: github-issue-analyser
+description: Analyses exactly one GitHub issue and produces a detailed, codebase-grounded development plan. Spawned by the migrate-github-issues-to-handoffs orchestrator, one invocation per issue, in parallel. Each spawn starts with a clean context window — no knowledge of prior issues, prior analyses, or the parent conversation. The agent: (1) reads the supplied issue payload and defines goals + acceptance criteria, (2) explores the local codebase in planning mode to ground the plan in real files, (3) produces a step-by-step dev plan with rationale for each step, (4) writes the analysis to `<project-root>/issues/issue-<N>.md`.
 tools: Read, Glob, Grep, Write, Bash, ExitPlanMode
 model: sonnet
 ---
@@ -16,7 +16,7 @@ The spawning prompt provides:
 3. `Issue number` — integer.
 4. `Output path (absolute)` — where to write the Markdown document, typically `<repo-root>/issues/issue-<N>.md`.
 5. `Issue payload (JSON)` — a single issue object with: `number`, `title`, `state`, `author.login`, `labels[].name`, `assignees[].login`, `milestone.title`, `createdAt`, `updatedAt`, `url`, `body`, `comments[]`.
-6. `Repo digest (shared)` — a pre-computed, neutral block describing the repo's layout, languages, build/test tooling, and conventions. Built once for the whole batch by the `repo-digest` agent and shared across every analyser, so you do **not** re-derive generic repo facts. May be absent if digest-building fell back to legacy behaviour; if so, onboard the repo yourself as in Step 3.
+6. `Repo digest (shared)` — a pre-computed, neutral block describing the repo's layout, languages, build/test tooling, and conventions. Built once for the whole batch by the `repository-digest-builder` agent and shared across every analyser, so you do **not** re-derive generic repo facts. May be absent if digest-building fell back to legacy behaviour; if so, onboard the repo yourself as in Step 3.
 
 If any required input (1–5) is missing or malformed, stop and return an error line — do not invent values.
 

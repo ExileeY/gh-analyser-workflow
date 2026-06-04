@@ -1,11 +1,11 @@
 ---
-name: analyse-github-issues
-description: This skill should be used when the user asks to "analyse github issues", "analyze github issues", "fetch and analyse issues", "review open issues", "produce issue analysis documents", "create issue analysis reports", or wants to run a batch analysis of the current repository's open GitHub issues with one detailed development-plan document per issue. Fetches OPEN issues from the current repo with `gh`, then spawns one `issue-analyser` sub-agent per issue (clean context window each). Each sub-agent analyses the codebase in planning mode and writes `issues/issue-<N>.md` at the project root.
+name: migrate-github-issues-to-handoffs
+description: This skill should be used when the user asks to "analyse github issues", "analyze github issues", "fetch and analyse issues", "review open issues", "produce issue analysis documents", "create issue analysis reports", or wants to run a batch analysis of the current repository's open GitHub issues with one detailed development-plan document per issue. Fetches OPEN issues from the current repo with `gh`, then spawns one `github-issue-analyser` sub-agent per issue (clean context window each). Each sub-agent analyses the codebase in planning mode and writes `issues/issue-<N>.md` at the project root.
 ---
 
-# Analyse GitHub Issues
+# Migrate GitHub Issues to Handoffs
 
-Orchestrate a batch analysis of the current repository's **open** GitHub issues. Fetch them with the GitHub CLI, spawn one `issue-analyser` sub-agent per issue (each with a clean context window), and produce one detailed development-plan document per issue at `./issues/issue-<issue-number>.md`.
+Orchestrate a batch analysis of the current repository's **open** GitHub issues. Fetch them with the GitHub CLI, spawn one `github-issue-analyser` sub-agent per issue (each with a clean context window), and produce one detailed development-plan document per issue at `./issues/issue-<issue-number>.md`.
 
 ## When to Use
 
@@ -19,8 +19,8 @@ Trigger on requests such as:
 
 - The current working directory must be a GitHub-connected repository (the `gh` CLI must resolve a repo).
 - Fetch **OPEN** issues only by default. Adjust only if the user explicitly asks for closed or all issues.
-- Each issue analysis MUST run as a spawn of the `issue-analyser` sub-agent. Sub-agents always start with a clean context window. Do NOT inline the analysis logic in this skill.
-- Use the `Agent` tool with `subagent_type: "issue-analyser"`. The agent definition lives at `.claude/agents/issue-analyser.md`.
+- Each issue analysis MUST run as a spawn of the `github-issue-analyser` sub-agent. Sub-agents always start with a clean context window. Do NOT inline the analysis logic in this skill.
+- Use the `Agent` tool with `subagent_type: "github-issue-analyser"`. The agent definition lives at `.claude/agents/github-issue-analyser.md`.
 - One output file per issue at `./issues/issue-<issue-number>.md` (project root, folder name `issues`).
 
 ## Workflow
@@ -74,29 +74,29 @@ Use this absolute path in every spawn prompt below.
 
 ### Phase 3.5 — Build the Repo Digest (once)
 
-Each `issue-analyser` would otherwise re-onboard to the repo from scratch (mapping layout, reading the README/manifests, learning conventions) — paying that generic cost once per issue. Instead, compute it **once** here and share it with every analyser.
+Each `github-issue-analyser` would otherwise re-onboard to the repo from scratch (mapping layout, reading the README/manifests, learning conventions) — paying that generic cost once per issue. Instead, compute it **once** here and share it with every analyser.
 
-Spawn a single `repo-digest` agent via the `Agent` tool:
+Spawn a single `repository-digest-builder` agent via the `Agent` tool:
 
 - `description`: `"Build repo digest"`
-- `subagent_type`: `"repo-digest"`
+- `subagent_type`: `"repository-digest-builder"`
 - `prompt`: `Repository root (absolute): <ABSOLUTE_PROJECT_ROOT>`
 - `run_in_background`: omit (run foreground; the digest is needed before any analyser spawns)
 
-The `repo-digest` agent runs in a **clean context with no knowledge of any issue** — that is deliberate. The digest must describe the repo *as it is*, not as the backlog makes it look. If the orchestrator built the digest itself, its context (already full of issue bodies) would skew it toward the modules the issues mention. The zero-context agent guarantees a neutral, issue-independent map.
+The `repository-digest-builder` agent runs in a **clean context with no knowledge of any issue** — that is deliberate. The digest must describe the repo *as it is*, not as the backlog makes it look. If the orchestrator built the digest itself, its context (already full of issue bodies) would skew it toward the modules the issues mention. The zero-context agent guarantees a neutral, issue-independent map.
 
-Capture the agent's returned **Repo digest** block verbatim and reuse it for every spawn in Phase 4. If the `repo-digest` agent fails, fall back to the legacy behaviour (let each analyser onboard itself: omit the digest section from the spawn prompt) and note the fallback to the user.
+Capture the agent's returned **Repo digest** block verbatim and reuse it for every spawn in Phase 4. If the `repository-digest-builder` agent fails, fall back to the legacy behaviour (let each analyser onboard itself: omit the digest section from the spawn prompt) and note the fallback to the user.
 
-### Phase 4 — Spawn `issue-analyser` Sub-Agents (one per issue)
+### Phase 4 — Spawn `github-issue-analyser` Sub-Agents (one per issue)
 
-For each issue, spawn a separate `issue-analyser` sub-agent via the `Agent` tool. Each spawn starts with a clean context window — no parent conversation, no other issues, no prior analyses.
+For each issue, spawn a separate `github-issue-analyser` sub-agent via the `Agent` tool. Each spawn starts with a clean context window — no parent conversation, no other issues, no prior analyses.
 
 **Parallelism:** Issues are independent. Dispatch multiple `Agent` calls in parallel by emitting multiple tool-use blocks in the same assistant message. Cap parallelism at **5 concurrent agents** to avoid resource pressure. For larger backlogs, dispatch in sequential waves of 5.
 
 **`Agent` tool call shape** — one call per issue:
 
 - `description`: `"Analyse issue #<N>"`
-- `subagent_type`: `"issue-analyser"`
+- `subagent_type`: `"github-issue-analyser"`
 - `prompt`: the template below, fully substituted
 - `run_in_background`: omit (run foreground) so the wave completes before verification
 
@@ -141,7 +141,7 @@ Do not repeat the analyses themselves — they live on disk.
 
 ## Important Constraints
 
-- Do NOT analyse issues directly in this skill's context. All analysis happens inside spawned `issue-analyser` sub-agents.
+- Do NOT analyse issues directly in this skill's context. All analysis happens inside spawned `github-issue-analyser` sub-agents.
 - Do NOT share state between sub-agents. Each one only sees its own issue payload — that is the point of the clean context window.
 - Do NOT pass the full issue list to any single sub-agent. One issue per spawn.
 - Do NOT modify repository files other than writing to `./issues/`.
@@ -149,6 +149,6 @@ Do not repeat the analyses themselves — they live on disk.
 
 ## Resources
 
-- The `repo-digest` agent definition at `.claude/agents/repo-digest.md`. A clean-context, read-only agent that builds the shared repo digest once (Phase 3.5) and returns it; it never sees any issue.
-- The `issue-analyser` agent definition (system prompt + tool allowlist) at `.claude/agents/issue-analyser.md`. The orchestrator only needs to invoke it correctly; the agent owns the analysis workflow, the codebase-planning step, and the Markdown template. It now consumes the shared repo digest instead of re-onboarding.
+- The `repository-digest-builder` agent definition at `.claude/agents/repository-digest-builder.md`. A clean-context, read-only agent that builds the shared repo digest once (Phase 3.5) and returns it; it never sees any issue.
+- The `github-issue-analyser` agent definition (system prompt + tool allowlist) at `.claude/agents/github-issue-analyser.md`. The orchestrator only needs to invoke it correctly; the agent owns the analysis workflow, the codebase-planning step, and the Markdown template. It now consumes the shared repo digest instead of re-onboarding.
 - `references/gh-issue-fields.md` — reference for the JSON fields returned by `gh issue list` and how the analyser consumes them.
